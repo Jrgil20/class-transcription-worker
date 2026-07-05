@@ -56,6 +56,16 @@ python3 -m venv .venv
 
 Graba desde el micrófono por defecto, transcribe segmentos de voz en vivo y al cortar con `Ctrl+C` guarda la nota en `poc/sesiones/`.
 
+### Inicio rápido en clase
+
+Hay un alias `clase` en `.bashrc` que corre `poc/start_clase.sh` (activa el venv y lanza `main.py`). Abrí una terminal y escribí:
+
+```bash
+clase
+```
+
+`Ctrl+C` para cortar y guardar la nota.
+
 > Nota: esta PoC usa `webrtcvad` en vez de `silero-vad` (más liviano, sin dependencia de `torch`). Los parámetros de audio, VAD y modelo están centralizados en `poc/config.py`.
 
 ## Documentación
