@@ -79,4 +79,4 @@ Ambos flags son opcionales; van al frontmatter de la nota y al nombre del archiv
 
 ## Documentación
 
-- [Plan de diseño completo](docs/plan.md)
+Ver [`docs/`](docs/README.md) para instalación, uso, configuración, elección de modelo según hardware, arquitectura y guía de contribución. El [plan de diseño completo](docs/plan.md) tiene el razonamiento detrás de las decisiones técnicas.
