@@ -8,9 +8,25 @@ from models import AudioChunk, TranscriptionResult
 class Transcriber:
     def __init__(self, cfg: ModelConfig):
         self._cfg = cfg
+        self._model_size = cfg.model_size
         self._model = WhisperModel(
             cfg.model_size, device=cfg.device, compute_type=cfg.compute_type
         )
+        self._degraded = False
+
+    @property
+    def degraded(self) -> bool:
+        return self._degraded
+
+    def degrade(self) -> None:
+        """Recarga el modelo con `fallback_model_size` (más liviano) por thermal throttling."""
+        if self._degraded:
+            return
+        self._model = WhisperModel(
+            self._cfg.fallback_model_size, device=self._cfg.device, compute_type=self._cfg.compute_type
+        )
+        self._model_size = self._cfg.fallback_model_size
+        self._degraded = True
 
     def transcribe(self, chunk: AudioChunk) -> TranscriptionResult:
         segments, info = self._model.transcribe(

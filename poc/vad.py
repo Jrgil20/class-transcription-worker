@@ -5,6 +5,8 @@ frames de voz consecutivos en segmentos, con:
 - padding: unos ms de contexto antes de que arranque la voz.
 - silence_timeout_s: silencio sostenido que cierra el segmento actual.
 - min_segment_duration_s: descarta segmentos demasiado cortos (ruido puntual).
+- max_segment_duration_s: corta un segmento aunque siga habiendo voz, para no
+  mandarle a Whisper audios larguísimos (peor latencia y precisión al final).
 """
 import collections
 from collections.abc import Iterator
@@ -35,6 +37,9 @@ class SpeechSegmenter:
         )
         silence_frames = max(1, int(vad_cfg.silence_timeout_s / self._frame_duration_s))
         self._silence_frames_limit = silence_frames
+        self._max_segment_frames = max(
+            1, int(vad_cfg.max_segment_duration_s / self._frame_duration_s)
+        )
 
     def segments(self, frames: Iterator[bytes]) -> Iterator[AudioChunk]:
         """Consume el stream de frames crudos y produce AudioChunks de voz."""
@@ -71,6 +76,15 @@ class SpeechSegmenter:
                 num_silence = 0
                 segment_started_at = None
                 self._ring_buffer.clear()
+            elif len(voiced_frames) >= self._max_segment_frames:
+                # Voz continua sin pausas: cortamos igual para no acumular
+                # audios larguísimos, pero seguimos "triggered" sin pasar por el ring buffer.
+                chunk = self._build_chunk(voiced_frames, segment_started_at)
+                if chunk is not None:
+                    yield chunk
+                voiced_frames = []
+                num_silence = 0
+                segment_started_at = datetime.now(timezone.utc)
 
         # stream cerrado con un segmento todavía abierto
         if triggered and voiced_frames:

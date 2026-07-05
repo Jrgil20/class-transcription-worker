@@ -4,11 +4,14 @@ Escribe cada segmento a un archivo temporal (.tmp.md) apenas se transcribe,
 para no perder trabajo si el proceso se cae a mitad de la clase (WAL ligero).
 Al finalizar la sesión, compone el archivo final con front-matter y metadata.
 """
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
 from config import OutputConfig
 from models import TranscriptionResult
+
+_STAMP_RE = re.compile(r"(\d{8}_\d{4})")
 
 
 def _format_offset(seconds: float) -> str:
@@ -18,20 +21,46 @@ def _format_offset(seconds: float) -> str:
     return f"{h:02d}:{m:02d}:{s:02d}"
 
 
+def _slugify(text: str) -> str:
+    keep = [c.lower() if c.isalnum() else "-" for c in text.strip()]
+    slug = "".join(keep)
+    while "--" in slug:
+        slug = slug.replace("--", "-")
+    return slug.strip("-")
+
+
 class MarkdownWriter:
-    def __init__(self, cfg: OutputConfig, model_name: str):
+    def __init__(
+        self,
+        cfg: OutputConfig,
+        model_name: str,
+        asignatura: str = "",
+        profesor: str = "",
+    ):
         self._cfg = cfg
         self._model_name = model_name
+        self._asignatura = asignatura
+        self._profesor = profesor
         self._session_start: datetime | None = None
         self._tmp_path: Path | None = None
+        self._final_stem: str | None = None
         self._segment_count = 0
         self._logprob_sum = 0.0
 
-    def start(self) -> None:
+    def start(self, part: int | None = None) -> None:
         self._cfg.output_dir.mkdir(parents=True, exist_ok=True)
         self._session_start = datetime.now(timezone.utc)
         stamp = self._session_start.strftime("%Y%m%d_%H%M")
-        self._tmp_path = self._cfg.output_dir / f"{self._cfg.filename_prefix}_{stamp}.tmp.md"
+
+        stem_parts = [self._cfg.filename_prefix]
+        if self._asignatura:
+            stem_parts.append(_slugify(self._asignatura))
+        stem_parts.append(stamp)
+        if part is not None:
+            stem_parts.append(f"parte{part}")
+        self._final_stem = "_".join(stem_parts)
+
+        self._tmp_path = self._cfg.output_dir / f"{self._final_stem}.tmp.md"
         self._tmp_path.write_text("", encoding="utf-8")
 
     def add_segment(self, result: TranscriptionResult) -> None:
@@ -60,8 +89,8 @@ class MarkdownWriter:
         header = (
             "---\n"
             f"fecha: {self._session_start.date()}\n"
-            "asignatura: \n"
-            "profesor: \n"
+            f"asignatura: {self._asignatura}\n"
+            f"profesor: {self._profesor}\n"
             f"duracion: {_format_offset(duration.total_seconds())}\n"
             f"modelo: {self._model_name}\n"
             "---\n\n"
@@ -72,8 +101,53 @@ class MarkdownWriter:
         )
         body = self._tmp_path.read_text(encoding="utf-8")
 
-        stamp = self._session_start.strftime("%Y%m%d_%H%M")
-        final_path = self._cfg.output_dir / f"{self._cfg.filename_prefix}_{stamp}.md"
+        final_path = self._cfg.output_dir / f"{self._final_stem}.md"
         final_path.write_text(header + body, encoding="utf-8")
         self._tmp_path.unlink(missing_ok=True)
         return final_path
+
+
+def recover_orphaned_sessions(cfg: OutputConfig) -> list[Path]:
+    """Convierte en .md cualquier .tmp.md dejado por un corte inesperado del proceso.
+
+    No conocemos asignatura/profesor/duración/modelo de una sesión huérfana (esa
+    metadata vivía solo en memoria), así que el resultado queda marcado como
+    recuperado y con esos campos vacíos.
+    """
+    if not cfg.output_dir.exists():
+        return []
+
+    recovered: list[Path] = []
+    for tmp_path in sorted(cfg.output_dir.glob("*.tmp.md")):
+        body = tmp_path.read_text(encoding="utf-8")
+        segment_count = sum(1 for line in body.splitlines() if line.startswith("## "))
+
+        match = _STAMP_RE.search(tmp_path.name)
+        started_at = (
+            datetime.strptime(match.group(1), "%Y%m%d_%H%M")
+            if match
+            else datetime.fromtimestamp(tmp_path.stat().st_mtime)
+        )
+
+        header = (
+            "---\n"
+            f"fecha: {started_at.date()}\n"
+            "asignatura: \n"
+            "profesor: \n"
+            "duracion: desconocida (sesión recuperada tras corte inesperado)\n"
+            "modelo: desconocido\n"
+            "---\n\n"
+            f"# Clase — {started_at.strftime('%Y-%m-%d %H:%M')} (recuperada)\n\n"
+            "> [!warning] Sesión recuperada\n"
+            "> El proceso se interrumpió sin cerrar la nota correctamente; "
+            "esto se reconstruyó a partir del progreso guardado.\n"
+            f"> - Segmentos recuperados: {segment_count}\n\n"
+        )
+
+        base_name = tmp_path.name.removesuffix(".tmp.md")
+        final_path = cfg.output_dir / f"{base_name}_recuperada.md"
+        final_path.write_text(header + body, encoding="utf-8")
+        tmp_path.unlink()
+        recovered.append(final_path)
+
+    return recovered
