@@ -43,7 +43,20 @@ src/
 
 ## Estado
 
-`design` — en fase de PoC. Ver [`docs/plan.md`](docs/plan.md) para el diseño detallado.
+`poc` — PoC funcional en [`poc/`](poc/). Sin Clean Architecture todavía (scripts planos pero con responsabilidades bien separadas); valida el pipeline completo captura → VAD → transcripción → nota antes de invertir en arquitectura. Ver [`docs/plan.md`](docs/plan.md) para el diseño completo.
+
+### Cómo correr la PoC
+
+```bash
+cd poc
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+.venv/bin/python3 main.py
+```
+
+Graba desde el micrófono por defecto, transcribe segmentos de voz en vivo y al cortar con `Ctrl+C` guarda la nota en `poc/sesiones/`.
+
+> Nota: esta PoC usa `webrtcvad` en vez de `silero-vad` (más liviano, sin dependencia de `torch`). Los parámetros de audio, VAD y modelo están centralizados en `poc/config.py`.
 
 ## Documentación
 

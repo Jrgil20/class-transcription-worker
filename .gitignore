@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+.venv/
+poc/sesiones/*.md
+poc/sesiones/*.tmp.md
